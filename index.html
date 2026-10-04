@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Offline Digest</title>
+  <meta name="description" content="An offline-first reading list with instant full-text search.">
+  <meta name="theme-color" content="#0e0f12">
+  <meta name="color-scheme" content="dark">
+
+  <!-- iOS standalone ("Add to Home Screen") -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Digest">
+  <meta name="format-detection" content="telephone=no">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Library / search view -->
+  <div id="list-view" class="view">
+    <header class="topbar">
+      <div class="brand-row">
+        <h1 class="brand">Digest</h1>
+        <span id="net-status" class="net" aria-live="polite" hidden>Offline</span>
+        <button id="import-btn" class="icon-btn" type="button" aria-label="Import or sync articles">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+
+      <div class="search" role="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="search" type="search" placeholder="Search titles, tags, full text" aria-label="Search articles"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <button id="clear-search" class="clear-btn" type="button" aria-label="Clear search" hidden>&times;</button>
+      </div>
+
+      <nav id="tabs" class="tabs" role="tablist" aria-label="Categories"></nav>
+    </header>
+
+    <main class="list-main">
+      <p id="result-info" class="result-info" aria-live="polite"></p>
+      <ul id="article-list" class="article-list"></ul>
+      <div id="empty" class="empty" hidden></div>
+    </main>
+  </div>
+
+  <!-- Reader view -->
+  <div id="reader-view" class="view" hidden>
+    <header class="reader-bar">
+      <button id="back-btn" class="text-btn" type="button">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Library
+      </button>
+      <div class="font-ctl" role="group" aria-label="Font size">
+        <button id="font-down" type="button" aria-label="Decrease font size">A<span class="minus">&minus;</span></button>
+        <button id="font-up" type="button" aria-label="Increase font size">A<span class="plus">+</span></button>
+      </div>
+      <div class="progress"><div id="progress-bar" class="progress-bar"></div></div>
+    </header>
+    <article id="reader" class="reader"></article>
+  </div>
+
+  <!-- Import / sync sheet -->
+  <dialog id="import-dialog" class="sheet" aria-labelledby="import-title">
+    <div class="sheet-head">
+      <h2 id="import-title">Import &amp; Sync</h2>
+      <button class="text-btn" type="button" data-close>Done</button>
+    </div>
+
+    <section class="sheet-sec">
+      <h3>From a file</h3>
+      <p class="hint">A JSON array of articles, a JSON Feed, or an RSS/Atom XML dump.</p>
+      <label class="btn btn-primary">
+        Choose file…
+        <input id="file-input" class="visually-hidden" type="file"
+               accept=".json,.xml,.rss,.atom,application/json,application/xml,text/xml,application/rss+xml,application/atom+xml">
+      </label>
+    </section>
+
+    <section class="sheet-sec">
+      <h3>Sync from URL</h3>
+      <p class="hint">Needs a connection. Remote servers must allow cross-origin requests (CORS).</p>
+      <div class="row">
+        <input id="sync-url" type="url" inputmode="url" placeholder="https://example.com/feed.json"
+               autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button id="sync-btn" class="btn" type="button">Sync</button>
+      </div>
+      <button id="sync-default" class="btn btn-ghost" type="button">Re-sync bundled articles.json</button>
+    </section>
+
+    <section class="sheet-sec">
+      <h3>Paste JSON or RSS</h3>
+      <textarea id="paste-input" rows="4" placeholder='[{"title": "…", "body": "…", "category": "Tech"}]'
+                autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+      <button id="paste-btn" class="btn" type="button">Import pasted text</button>
+    </section>
+
+    <section class="sheet-sec">
+      <h3>Library</h3>
+      <p id="lib-stats" class="hint"></p>
+      <button id="reset-btn" class="btn btn-danger" type="button">Reset library</button>
+    </section>
+
+    <p id="import-status" class="status" aria-live="polite"></p>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden>
+    <span id="toast-msg"></span>
+    <button id="toast-action" class="toast-action" type="button" hidden></button>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
