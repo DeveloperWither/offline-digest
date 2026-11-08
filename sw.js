@@ -1,6 +1,6 @@
 /* Offline Digest service worker.
  * Bump VERSION whenever you change any cached file so clients pick up the update. */
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.9.0';
 const CACHE = `offline-digest-${VERSION}`;
 
 // Paths are relative to this file, so the app works from any GitHub Pages sub-path.
@@ -8,11 +8,13 @@ const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './i18n.js',
   './app.js',
   './articles.json',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
 ];
 

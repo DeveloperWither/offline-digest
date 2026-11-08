@@ -1,7 +1,7 @@
 {
-  "name": "Offline Digest & Search",
+  "name": "Digest: News & Learn Offline",
   "short_name": "Digest",
-  "description": "An offline-first reading list with instant full-text search.",
+  "description": "Free news, AI, tech, history and learning guides you can read offline. No ads, no account.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -9,11 +9,37 @@
   "orientation": "portrait",
   "background_color": "#0e0f12",
   "theme_color": "#0e0f12",
-  "categories": ["news", "books", "productivity"],
+  "lang": "en",
+  "categories": ["news", "education", "books"],
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "title": "share_title", "text": "share_text", "url": "share_url" }
+  },
+  "shortcuts": [
+    {
+      "name": "Continue reading",
+      "short_name": "Continue",
+      "url": "./?continue=1",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Saved articles",
+      "short_name": "Saved",
+      "url": "./?view=saved",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Search",
+      "short_name": "Search",
+      "url": "./?focus=search",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

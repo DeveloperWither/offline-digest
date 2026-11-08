@@ -4,11 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Offline Digest</title>
-  <meta name="description" content="An offline-first reading list with instant full-text search.">
+  <meta name="description" content="A free, offline-first reading list with instant full-text search and read-aloud.">
   <meta name="theme-color" content="#0e0f12">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
 
-  <!-- iOS standalone ("Add to Home Screen") -->
+  <!-- Apply the saved theme and text direction before first paint (no flash). -->
+  <script>
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('od:settings') || '{}'), theme = s.theme || 'system';
+        if (theme === 'system') theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+        var lang = s.lang || String((navigator.languages && navigator.languages[0]) || navigator.language || 'en').slice(0, 2).toLowerCase();
+        if (lang === 'ar') document.documentElement.dir = 'rtl';
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Standalone ("Add to Home Screen" / installed app) -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -27,24 +40,51 @@
     <header class="topbar">
       <div class="brand-row">
         <h1 class="brand">Digest</h1>
-        <span id="net-status" class="net" aria-live="polite" hidden>Offline</span>
-        <button id="import-btn" class="icon-btn" type="button" aria-label="Import or sync articles">
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        <span id="net-status" class="net" aria-live="polite" data-i18n="offline" hidden>Offline</span>
+        <div class="top-actions">
+          <button id="goal-btn" class="goal-pill" type="button" aria-label="Today's reading progress"></button>
+          <button id="settings-btn" class="icon-btn" type="button" data-i18n-aria="aria.settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </button>
+        </div>
       </div>
 
       <div class="search" role="search">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <input id="search" type="search" placeholder="Search titles, tags, full text" aria-label="Search articles"
+        <input id="search" type="search" placeholder="Search titles, tags, full text" aria-label="Search articles" data-i18n-ph="search.ph" data-i18n-aria="search.aria"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
-        <button id="clear-search" class="clear-btn" type="button" aria-label="Clear search" hidden>&times;</button>
+        <button id="clear-search" class="clear-btn" type="button" aria-label="Clear search" data-i18n-aria="search.clear" hidden>&times;</button>
       </div>
 
       <nav id="tabs" class="tabs" role="tablist" aria-label="Categories"></nav>
     </header>
 
     <main class="list-main">
-      <p id="result-info" class="result-info" aria-live="polite"></p>
+      <div class="list-tools">
+        <p id="result-info" class="result-info" aria-live="polite"></p>
+        <label class="select">
+          <span class="visually-hidden">Show</span>
+          <select id="filter-select">
+            <option value="all" data-i18n="filter.all">All</option>
+            <option value="unread" data-i18n="filter.unread">Unread</option>
+            <option value="progress" data-i18n="filter.progress">In progress</option>
+            <option value="saved" data-i18n="filter.saved">Saved</option>
+            <option value="highlights" data-i18n="filter.highlights">Highlighted</option>
+          </select>
+        </label>
+        <label class="select" id="sort-wrap">
+          <span class="visually-hidden">Sort by</span>
+          <select id="sort-select">
+            <option value="foryou" data-i18n="sort.foryou">For you</option>
+            <option value="new" data-i18n="sort.new">Newest</option>
+            <option value="old" data-i18n="sort.old">Oldest</option>
+            <option value="short" data-i18n="sort.short">Shortest</option>
+            <option value="long" data-i18n="sort.long">Longest</option>
+          </select>
+        </label>
+      </div>
+      <div id="continue"></div>
+      <div id="today"></div>
       <ul id="article-list" class="article-list"></ul>
       <div id="empty" class="empty" hidden></div>
     </main>
@@ -55,56 +95,247 @@
     <header class="reader-bar">
       <button id="back-btn" class="text-btn" type="button">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Library
+        <span data-i18n="library">Library</span>
       </button>
-      <div class="font-ctl" role="group" aria-label="Font size">
-        <button id="font-down" type="button" aria-label="Decrease font size">A<span class="minus">&minus;</span></button>
-        <button id="font-up" type="button" aria-label="Increase font size">A<span class="plus">+</span></button>
+      <div class="reader-actions">
+        <button id="listen-btn" class="bar-btn" type="button" aria-label="Read aloud" data-i18n-aria="aria.listen">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="save-btn" class="bar-btn" type="button" aria-label="Save article" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path class="fillable" d="M6 3.5h12v17l-6-4.2-6 4.2v-17Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="display-btn" class="bar-btn aa" type="button" aria-label="Text and display" data-i18n-aria="aria.display">Aa</button>
+        <button id="more-btn" class="bar-btn" type="button" aria-label="More actions" data-i18n-aria="aria.more">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="5" cy="12" r="1.9" fill="currentColor"/><circle cx="12" cy="12" r="1.9" fill="currentColor"/><circle cx="19" cy="12" r="1.9" fill="currentColor"/></svg>
+        </button>
       </div>
       <div class="progress"><div id="progress-bar" class="progress-bar"></div></div>
     </header>
     <article id="reader" class="reader"></article>
   </div>
 
-  <!-- Import / sync sheet -->
-  <dialog id="import-dialog" class="sheet" aria-labelledby="import-title">
+  <!-- Read-aloud player -->
+  <div id="player" class="player" role="region" aria-label="Read aloud" hidden>
+    <button id="tts-prev" type="button" aria-label="Previous paragraph">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 5v14M19 5l-9 7 9 7V5Z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="tts-play" class="play" type="button" aria-label="Pause">
+      <svg class="i-pause" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor"/></svg>
+      <svg class="i-play" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z" fill="currentColor"/></svg>
+    </button>
+    <button id="tts-next" type="button" aria-label="Next paragraph">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M18 5v14M5 5l9 7-9 7V5Z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </button>
+    <span id="tts-label" class="player-label"></span>
+    <button id="tts-close" type="button" aria-label="Stop reading aloud">&times;</button>
+  </div>
+
+  <!-- Floating bar for highlighting selected text -->
+  <div id="sel-bar" class="sel-bar" role="toolbar" aria-label="Selected text" hidden>
+    <button type="button" data-sel="hl">🖍 Highlight</button>
+    <button type="button" data-sel="quote" data-i18n="sel.quote">Quote card</button>
+    <button type="button" data-sel="copy" data-i18n="sel.copy">Copy</button>
+  </div>
+
+  <!-- Progress sheet: daily goal, streak, level, badges -->
+  <dialog id="progress-dialog" class="sheet" aria-labelledby="progress-title">
     <div class="sheet-head">
-      <h2 id="import-title">Import &amp; Sync</h2>
-      <button class="text-btn" type="button" data-close>Done</button>
+      <h2 id="progress-title" data-i18n="progress.title">Your progress</h2>
+      <button class="text-btn" type="button" data-close data-i18n="done">Done</button>
+    </div>
+
+    <section class="sheet-sec today-sec">
+      <div id="today-ring" class="today-ring"></div>
+      <p id="today-text" class="today-text"></p>
+    </section>
+
+    <section class="sheet-sec">
+      <h3 data-i18n="goal.title">Daily goal</h3>
+      <div class="seg" data-setting="goal" role="group" aria-label="Daily goal in minutes">
+        <button type="button" data-value="5" data-i18n="min" data-i18n-n="5">5 min</button>
+        <button type="button" data-value="10" data-i18n="min" data-i18n-n="10">10 min</button>
+        <button type="button" data-value="15" data-i18n="min" data-i18n-n="15">15 min</button>
+        <button type="button" data-value="30" data-i18n="min" data-i18n-n="30">30 min</button>
+      </div>
+      <div id="week" class="week" aria-label="Minutes read in the last 7 days"></div>
+    </section>
+
+    <section class="sheet-sec">
+      <div id="level" class="level"></div>
+      <div id="stats" class="stats"></div>
+    </section>
+
+    <section class="sheet-sec">
+      <h3 class="with-count"><span data-i18n="badges">Badges</span> <span id="badge-count"></span></h3>
+      <div id="badges" class="badges"></div>
+    </section>
+
+    <section class="sheet-sec invite">
+      <div id="freeze-info" class="freeze-info"></div>
+      <p data-i18n-html="invite.text"></p>
+      <button id="share-progress" class="btn btn-primary" type="button" data-i18n="progress.share">📣 Share my progress</button>
+      <button class="btn" type="button" data-invite data-i18n="invite.btn">💌 Invite friends</button>
+    </section>
+  </dialog>
+
+  <!-- First launch -->
+  <dialog id="welcome-dialog" class="sheet welcome" aria-labelledby="welcome-title">
+    <div class="welcome-lang">
+      <select class="lang-select select-pill" aria-label="Language" data-i18n-aria="language"></select>
+    </div>
+    <div class="welcome-hero">
+      <div class="welcome-logo">📰</div>
+      <h2 id="welcome-title" data-i18n="welcome.title">Welcome to Digest</h2>
+      <p data-i18n="welcome.text"></p>
+    </div>
+    <section class="sheet-sec">
+      <h3 data-i18n="welcome.topics">What do you like?</h3>
+      <div id="topics" class="topics"></div>
+    </section>
+    <section class="sheet-sec">
+      <h3 data-i18n="welcome.goal">Daily reading goal</h3>
+      <div class="seg" data-setting="goal" role="group" aria-label="Daily goal in minutes">
+        <button type="button" data-value="5" data-i18n="min" data-i18n-n="5">5 min</button>
+        <button type="button" data-value="10" data-i18n="min" data-i18n-n="10">10 min</button>
+        <button type="button" data-value="15" data-i18n="min" data-i18n-n="15">15 min</button>
+        <button type="button" data-value="30" data-i18n="min" data-i18n-n="30">30 min</button>
+      </div>
+      <p class="hint" data-i18n="welcome.hint"></p>
+    </section>
+    <section class="sheet-sec">
+      <button class="btn btn-primary btn-big" type="button" data-close data-i18n="welcome.start">Start reading</button>
+    </section>
+  </dialog>
+
+  <!-- Settings sheet -->
+  <dialog id="settings-dialog" class="sheet" aria-labelledby="settings-title">
+    <div class="sheet-head">
+      <h2 id="settings-title" data-i18n="settings.title">Settings</h2>
+      <button class="text-btn" type="button" data-close data-i18n="done">Done</button>
     </div>
 
     <section class="sheet-sec">
-      <h3>From a file</h3>
-      <p class="hint">A JSON array of articles, a JSON Feed, or an RSS/Atom XML dump.</p>
-      <label class="btn btn-primary">
-        Choose file…
-        <input id="file-input" class="visually-hidden" type="file"
-               accept=".json,.xml,.rss,.atom,application/json,application/xml,text/xml,application/rss+xml,application/atom+xml">
+      <h3 data-i18n="language">Language</h3>
+      <select class="lang-select field" aria-label="Language" data-i18n-aria="language"></select>
+    </section>
+
+    <section class="sheet-sec">
+      <h3 data-i18n="region">Your region</h3>
+      <select id="region-select" class="field" aria-label="Your region" data-i18n-aria="region"></select>
+      <p class="hint" data-i18n="region.hint"></p>
+    </section>
+
+    <section class="sheet-sec">
+      <h3 data-i18n="theme">Theme</h3>
+      <div class="seg" data-setting="theme" role="group" aria-label="Theme">
+        <button type="button" data-value="system" data-i18n="theme.system">Auto</button>
+        <button type="button" data-value="dark" data-i18n="theme.dark">Dark</button>
+        <button type="button" data-value="light" data-i18n="theme.light">Light</button>
+        <button type="button" data-value="sepia" data-i18n="theme.sepia">Sepia</button>
+      </div>
+    </section>
+
+    <section class="sheet-sec">
+      <h3 data-i18n="text.title">Reading text</h3>
+      <div class="setting-row">
+        <span data-i18n="text.size">Size</span>
+        <div class="stepper" role="group" aria-label="Font size">
+          <button id="font-down" type="button" aria-label="Decrease font size">A<span class="minus">&minus;</span></button>
+          <output id="font-size-val">18</output>
+          <button id="font-up" type="button" aria-label="Increase font size">A<span class="plus">+</span></button>
+        </div>
+      </div>
+      <div class="seg" data-setting="font" role="group" aria-label="Font">
+        <button type="button" data-value="serif" class="f-serif" data-i18n="font.serif">Serif</button>
+        <button type="button" data-value="sans" class="f-sans" data-i18n="font.sans">Sans</button>
+      </div>
+      <div class="seg" data-setting="spacing" role="group" aria-label="Line spacing">
+        <button type="button" data-value="compact" data-i18n="spacing.compact">Compact</button>
+        <button type="button" data-value="normal" data-i18n="spacing.normal">Normal</button>
+        <button type="button" data-value="relaxed" data-i18n="spacing.relaxed">Relaxed</button>
+      </div>
+      <label class="switch-row">
+        <span data-i18n="wake">Keep screen on while reading</span>
+        <input id="wake-toggle" type="checkbox" class="switch">
       </label>
     </section>
 
-    <section class="sheet-sec">
-      <h3>Sync from URL</h3>
-      <p class="hint">Needs a connection. Remote servers must allow cross-origin requests (CORS).</p>
-      <div class="row">
-        <input id="sync-url" type="url" inputmode="url" placeholder="https://example.com/feed.json"
-               autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button id="sync-btn" class="btn" type="button">Sync</button>
+    <section class="sheet-sec" id="tts-settings">
+      <h3 data-i18n="tts.title">Read aloud</h3>
+      <div class="setting-row">
+        <label for="rate-range" data-i18n="tts.speed">Speed</label>
+        <output id="rate-val">1.0×</output>
       </div>
-      <button id="sync-default" class="btn btn-ghost" type="button">Re-sync bundled articles.json</button>
+      <input id="rate-range" type="range" min="0.6" max="2" step="0.1" value="1">
+      <label class="visually-hidden" for="voice-select">Voice</label>
+      <select id="voice-select" class="field"></select>
+      <p class="hint" data-i18n="tts.hint"></p>
     </section>
 
     <section class="sheet-sec">
-      <h3>Paste JSON or RSS</h3>
-      <textarea id="paste-input" rows="4" placeholder='[{"title": "…", "body": "…", "category": "Tech"}]'
-                autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
-      <button id="paste-btn" class="btn" type="button">Import pasted text</button>
+      <div id="install-row" hidden>
+        <button id="install-btn" class="btn btn-primary" type="button" data-i18n="install.btn">Install Digest app</button>
+      </div>
+      <button id="notes-btn" class="btn" type="button" data-i18n="notes.btn">📝 Notes &amp; backup</button>
+      <button class="btn" type="button" data-invite data-i18n="invite.btn">💌 Invite friends</button>
+    </section>
+
+    <p class="about"><span data-i18n="about"></span> <a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy">Privacy policy</a></p>
+  </dialog>
+
+  <!-- Article actions sheet -->
+  <dialog id="actions-dialog" class="sheet" aria-labelledby="actions-title">
+    <div class="sheet-head">
+      <h2 id="actions-title" data-i18n="actions.title">Article</h2>
+      <button class="text-btn" type="button" data-close data-i18n="done">Done</button>
+    </div>
+    <div class="menu">
+      <button type="button" data-act="share" data-i18n="act.share">Share…</button>
+      <button type="button" data-act="copy" data-i18n="act.copy">Copy text</button>
+      <button type="button" data-act="read" id="act-read">Mark as read</button>
+      <button type="button" data-act="top" data-i18n="act.top">Back to top</button>
+      <button type="button" data-act="delete" class="danger" data-i18n="act.delete">Delete from this device</button>
+    </div>
+  </dialog>
+
+  <!-- Import / write / backup sheet -->
+  <dialog id="import-dialog" class="sheet" aria-labelledby="import-title">
+    <div class="sheet-head">
+      <h2 id="import-title" data-i18n="imp.title">Add &amp; Back up</h2>
+      <button class="text-btn" type="button" data-close data-i18n="done">Done</button>
+    </div>
+
+    <section class="sheet-sec">
+      <h3 data-i18n="note.title">Write a note</h3>
+      <p class="hint" data-i18n="note.hint"></p>
+      <input id="note-title" class="field" type="text" placeholder="Title" data-i18n-ph="note.phTitle" autocomplete="off">
+      <textarea id="note-body" class="field prose" rows="5" data-i18n-ph="note.phBody"></textarea>
+      <div class="row">
+        <select id="note-cat" class="field" aria-label="Category"></select>
+        <button id="note-save" class="btn" type="button" data-i18n="note.save">Save note</button>
+      </div>
     </section>
 
     <section class="sheet-sec">
-      <h3>Library</h3>
+      <h3 data-i18n="file.title">From a file</h3>
+      <p class="hint" data-i18n="file.hint"></p>
+      <label class="btn btn-primary">
+        <span data-i18n="file.choose">Choose file…</span>
+        <input id="file-input" class="visually-hidden" type="file"
+               accept=".json,application/json">
+      </label>
+    </section>
+
+
+
+    <section class="sheet-sec">
+      <h3 data-i18n="lib.title">Library</h3>
       <p id="lib-stats" class="hint"></p>
-      <button id="reset-btn" class="btn btn-danger" type="button">Reset library</button>
+      <div class="row wrap">
+        <button id="export-btn" class="btn" type="button" data-i18n="export.btn">Export backup</button>
+        <button id="reset-btn" class="btn btn-danger" type="button" data-i18n="reset.btn">Reset library</button>
+      </div>
+      <p class="hint" data-i18n="backup.hint"></p>
     </section>
 
     <p id="import-status" class="status" aria-live="polite"></p>
@@ -115,6 +346,7 @@
     <button id="toast-action" class="toast-action" type="button" hidden></button>
   </div>
 
+  <script src="i18n.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>
