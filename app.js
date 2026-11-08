@@ -1,7 +1,7 @@
 /* Offline Digest & Search — zero-dependency offline reader */
 'use strict';
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '2.0.0';
 const CATEGORIES = ['All', 'World News', 'AI News', 'Tech', 'Learn', 'History & Conflicts'];
 const CATEGORY_KEYS = { 'World News': 'world', 'AI News': 'ai', 'History & Conflicts': 'history', 'Tech': 'tech', 'Learn': 'learn' };
 const CATEGORY_HINTS = [
@@ -12,6 +12,14 @@ const CATEGORY_HINTS = [
 const DB_NAME = 'offline-digest';
 const STORE = 'articles';
 const SEED_URL = 'articles.json';
+
+// Android app (Capacitor): same code, with native plugins for sharing, speech, haptics and ads.
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const Plug = NATIVE ? window.Capacitor.Plugins : {};
+const WEB_URL = 'https://developerwither.github.io/offline-digest/';
+const PLAY_URL = 'https://play.google.com/store/apps/details?id=com.developerwither.digest';
+// New articles for the Android app come from the website; the bundled copy covers the first launch.
+const REMOTE_SEED_URL = WEB_URL + 'articles.json';
 const WORDS_PER_MINUTE = 230;
 const FONT = { min: 14, max: 30, step: 2, def: 18 };
 const THEME_COLORS = { dark: '#0e0f12', light: '#f7f6f2', sepia: '#f4ecd8' };
@@ -78,6 +86,10 @@ const els = {
   freezeInfo: $('#freeze-info'),
   shareProgress: $('#share-progress'),
   regionSelect: $('#region-select'),
+  adsSec: $('#ads-sec'),
+  adFreeBtn: $('#adfree-btn'),
+  adPrivacyBtn: $('#adprivacy-btn'),
+  privacyLink: $('#privacy-link'),
   actions: $('#actions-dialog'),
   actionsTitle: $('#actions-title'),
   actRead: $('#act-read'),
@@ -782,6 +794,7 @@ function applyTheme() {
   const t = state.settings.theme === 'system' ? (colorQuery.matches ? 'light' : 'dark') : state.settings.theme;
   document.documentElement.dataset.theme = t;
   els.themeMeta.setAttribute('content', THEME_COLORS[t]);
+  if (NATIVE) Plug.SystemBars?.setStyle({ style: t === 'dark' ? 'DARK' : 'LIGHT' }).catch(() => {});
 }
 
 function applyReaderStyle() {
@@ -849,7 +862,12 @@ function updateProgress() {
 }
 
 let wakeLock = null;
+let nativeAwake = false;
 async function requestWakeLock() {
+  if (NATIVE && Plug.KeepAwake) {
+    if (state.settings.wake && state.currentId && !nativeAwake) { nativeAwake = true; Plug.KeepAwake.keepAwake().catch(() => {}); }
+    return;
+  }
   if (!state.settings.wake || !state.currentId || document.hidden || !('wakeLock' in navigator) || wakeLock) return;
   try {
     wakeLock = await navigator.wakeLock.request('screen');
@@ -857,14 +875,17 @@ async function requestWakeLock() {
   } catch { wakeLock = null; }
 }
 function releaseWakeLock() {
+  if (nativeAwake) { nativeAwake = false; Plug.KeepAwake.allowSleep().catch(() => {}); }
   if (wakeLock) wakeLock.release().catch(() => {});
   wakeLock = null;
 }
 
 /* ---------- Read aloud (on-device speech synthesis) ---------- */
 
+const nativeTts = NATIVE && !!Plug.TextToSpeech;
+let nativeVoices = [];
 const tts = {
-  supported: 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window,
+  supported: nativeTts || ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window),
   on: false,
   playing: false,
   blocks: [],
@@ -886,8 +907,13 @@ function ttsChunks(text) {
 }
 
 function pickVoice() {
-  if (!state.settings.voice) return null;
+  if (!state.settings.voice || nativeTts) return null;
   return speechSynthesis.getVoices().find((v) => v.voiceURI === state.settings.voice) || null;
+}
+
+function ttsCancel() {
+  if (nativeTts) Plug.TextToSpeech.stop().catch(() => {});
+  else if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
 function ttsStart() {
@@ -909,7 +935,7 @@ function clearSpeaking() {
 
 function ttsSpeak(i) {
   const run = ++tts.run;
-  speechSynthesis.cancel();
+  ttsCancel();
   clearSpeaking();
   if (i >= tts.blocks.length) {
     const id = state.currentId;
@@ -929,6 +955,14 @@ function ttsSpeak(i) {
   const next = () => {
     if (run !== tts.run) return;
     if (k >= chunks.length) { ttsSpeak(tts.i + 1); return; }
+    if (nativeTts) {
+      const text = chunks[k++];
+      const opts = { text, lang: guessLang(text), rate: state.settings.rate };
+      const vi = nativeVoices.findIndex((v) => v.voiceURI === state.settings.voice);
+      if (vi >= 0) { opts.voice = vi; opts.lang = nativeVoices[vi].lang; }
+      Plug.TextToSpeech.speak(opts).then(next, () => { if (run === tts.run) next(); });
+      return;
+    }
     const u = new SpeechSynthesisUtterance(chunks[k++]);
     u.rate = state.settings.rate;
     const v = pickVoice();
@@ -947,7 +981,7 @@ function ttsSpeak(i) {
 function ttsPause() {
   tts.run++;
   tts.playing = false;
-  speechSynthesis.cancel();
+  ttsCancel();
   updatePlayer();
 }
 
@@ -956,7 +990,7 @@ function ttsStop() {
   tts.run++;
   tts.on = false;
   tts.playing = false;
-  if (tts.supported) speechSynthesis.cancel();
+  if (tts.supported) ttsCancel();
   clearSpeaking();
   els.player.hidden = true;
   document.body.classList.remove('tts-on');
@@ -964,6 +998,7 @@ function ttsStop() {
 }
 
 function updatePlayer() {
+  updateBanner();
   els.ttsPlay.classList.toggle('is-paused', !tts.playing);
   els.ttsPlay.setAttribute('aria-label', tts.playing ? 'Pause' : 'Play');
   els.ttsLabel.textContent = tts.on ? `${tts.i + 1} / ${tts.blocks.length}` : '';
@@ -972,7 +1007,12 @@ function updatePlayer() {
 
 function populateVoices() {
   if (!tts.supported) { els.ttsSettings.hidden = true; return; }
-  const voices = speechSynthesis.getVoices().slice().sort((a, b) =>
+  if (nativeTts && !nativeVoices.length) {
+    Plug.TextToSpeech.getSupportedVoices()
+      .then((r) => { nativeVoices = r?.voices || []; if (nativeVoices.length) populateVoices(); })
+      .catch(() => {});
+  }
+  const voices = (nativeTts ? nativeVoices : speechSynthesis.getVoices()).slice().sort((a, b) =>
     (b.localService - a.localService) || a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
   els.voice.innerHTML = `<option value="">${esc(t('tts.default'))}</option>` + voices.map((v) =>
     `<option value="${esc(v.voiceURI)}">${esc(v.name)} · ${esc(v.lang)}${v.localService ? ' · ' + esc(t('tts.offline')) : ''}</option>`).join('');
@@ -1101,7 +1141,12 @@ function applyFreezes() {
   setTimeout(() => toast(t('freeze.used', { n: readingStreak() })), 800);
 }
 
-const buzz = (pattern) => { try { navigator.vibrate?.(pattern); } catch { /* not supported */ } };
+const buzz = (pattern) => {
+  try {
+    if (NATIVE && Plug.Haptics) Plug.Haptics.vibrate({ duration: Array.isArray(pattern) ? 45 : pattern }).catch(() => {});
+    else navigator.vibrate?.(pattern);
+  } catch { /* not supported */ }
+};
 
 /* ---------- Motion helpers ---------- */
 
@@ -1468,7 +1513,55 @@ function removeHighlight(text) {
 
 /* ---------- Quote cards (shareable images) ---------- */
 
-const appUrl = () => location.origin + location.pathname.replace(/index\.html$/, '');
+const appUrl = () => (NATIVE ? PLAY_URL : location.origin + location.pathname.replace(/index\.html$/, ''));
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(',')[1]);
+    fr.onerror = reject;
+    fr.readAsDataURL(blob);
+  });
+}
+
+// One share path for text, links and files. Returns 'shared', 'cancelled', 'failed' or 'unsupported'.
+async function shareOut({ title = 'Digest', text = '', url, blob, name }) {
+  if (NATIVE && Plug.Share) {
+    try {
+      const opts = { title, text, dialogTitle: title };
+      if (url) opts.url = url;
+      if (blob) {
+        const res = await Plug.Filesystem.writeFile({ path: name, data: await blobToBase64(blob), directory: 'CACHE' });
+        opts.files = [res.uri];
+      }
+      await Plug.Share.share(opts);
+      return 'shared';
+    } catch (err) {
+      return /cancel/i.test(String(err?.message || err)) ? 'cancelled' : 'failed';
+    }
+  }
+  const file = blob ? new File([blob], name, { type: blob.type || 'application/octet-stream' }) : null;
+  if (navigator.share && (!file || navigator.canShare?.({ files: [file] }))) {
+    try {
+      await navigator.share(file ? { files: [file], text, title } : { title, text, ...(url ? { url } : {}) });
+      return 'shared';
+    } catch (err) {
+      if (err.name === 'AbortError') return 'cancelled';
+    }
+  }
+  return 'unsupported';
+}
+
+// Image cards: share them, or save them when sharing isn't possible.
+async function shareImage(blob, name, text, title) {
+  const r = await shareOut({ title, text, blob, name });
+  if (r === 'shared') { bumpEvent('shares'); return; }
+  if (r === 'cancelled') return;
+  if (NATIVE) { toast(t('quote.fail')); return; }
+  downloadBlob(blob, name);
+  bumpEvent('shares');
+  toast(t('quote.saved'));
+}
 
 function wrapLines(ctx, text, maxWidth) {
   const words = text.split(' ');
@@ -1557,18 +1650,8 @@ async function shareQuote(quote) {
   if (!a || !quote) return;
   const blob = await makeQuoteCard(quote, a);
   if (!blob) { toast(t('quote.fail')); return; }
-  const file = new File([blob], 'digest-quote.png', { type: 'image/png' });
   const text = `“${quote.length > 200 ? quote.slice(0, 197) + '…' : quote}” — ${a.title}\n\n${t('share.quote')} ${appUrl()}`;
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], text });
-      bumpEvent('shares');
-    } catch (err) { if (err.name !== 'AbortError') downloadBlob(blob, file.name); }
-  } else {
-    downloadBlob(blob, file.name);
-    bumpEvent('shares');
-    toast(t('quote.saved'));
-  }
+  await shareImage(blob, 'digest-quote.png', text, a.title);
 }
 
 function downloadBlob(blob, name) {
@@ -1582,13 +1665,10 @@ function downloadBlob(blob, name) {
 }
 
 async function shareText(text) {
-  const data = { title: 'Digest', text: `${text} ${appUrl()}` };
-  if (navigator.share) {
-    try { await navigator.share(data); bumpEvent('shares'); } catch { /* cancelled */ }
-  } else {
-    await copyText(data.text, t('linkCopied'));
-    bumpEvent('shares');
-  }
+  const full = `${text} ${appUrl()}`;
+  const r = await shareOut({ title: 'Digest', text: full });
+  if (r === 'shared') bumpEvent('shares');
+  else if (r !== 'cancelled') { await copyText(full, t('linkCopied')); bumpEvent('shares'); }
 }
 
 const inviteFriends = () => shareText(t('share.invite'));
@@ -1774,6 +1854,120 @@ function answerQuiz(qi, oi) {
   }
 }
 
+/* ---------- Ads (Android app only) ----------
+ * Light by design: one small banner, only when the reader reaches the end of an article.
+ * Never pop-ups, never during quizzes or read-aloud, never offline, never in the first days,
+ * and a short video turns ads off for 24 hours. The website has no ads. */
+
+const ADS = {
+  // TEST IDs from Google. Replace with your own AdMob ad unit IDs before publishing.
+  banner: 'ca-app-pub-3940256099942544/9214589741',
+  rewarded: 'ca-app-pub-3940256099942544/5224354917',
+  testing: true,
+  graceDays: 3,
+  adFreeHours: 24,
+};
+const ad = { ready: false, created: false, visible: false, privacy: false, endSeen: false, quizSeen: false, observer: null };
+
+async function initAds() {
+  if (!NATIVE || !Plug.AdMob) return;
+  if (!prefs.get('firstSeen', 0)) prefs.set('firstSeen', Date.now());
+  els.adsSec.hidden = false;
+  try {
+    let info = await Plug.AdMob.requestConsentInfo();
+    if (info.isConsentFormAvailable && info.status === 'REQUIRED') info = await Plug.AdMob.showConsentForm();
+    ad.privacy = info.privacyOptionsRequirementStatus === 'REQUIRED';
+    if (!info.canRequestAds) { renderAdUi(); return; }
+    await Plug.AdMob.initialize({ initializeForTesting: ADS.testing });
+    ad.ready = true;
+    Plug.AdMob.addListener('bannerAdSizeChanged', (size) => {
+      document.documentElement.style.setProperty('--ad-h', `${Math.max(0, size?.height || 0)}px`);
+    });
+    Plug.AdMob.addListener('onRewardedVideoAdReward', grantAdFree);
+  } catch (err) {
+    console.warn('Ads unavailable:', err);
+  }
+  renderAdUi();
+}
+
+const adFreeUntil = () => Number(prefs.get('adFreeUntil', 0)) || 0;
+
+function adsAllowed() {
+  return ad.ready && navigator.onLine
+    && Date.now() - Number(prefs.get('firstSeen', Date.now())) > ADS.graceDays * 86400000
+    && Date.now() > adFreeUntil();
+}
+
+// Called whenever something that affects the banner changes.
+function updateBanner() {
+  if (!NATIVE || !ad.ready) return;
+  const want = adsAllowed() && !els.readerView.hidden && ad.endSeen && !ad.quizSeen && !tts.on
+    && !document.querySelector('dialog[open]');
+  if (want === ad.visible) return;
+  ad.visible = want;
+  document.body.classList.toggle('ad-on', want);
+  if (want) {
+    const p = ad.created ? Plug.AdMob.resumeBanner()
+      : Plug.AdMob.showBanner({ adId: ADS.banner, adSize: 'ADAPTIVE_BANNER', position: 'BOTTOM_CENTER', margin: 0, isTesting: ADS.testing });
+    ad.created = true;
+    p.catch(() => { ad.visible = false; document.body.classList.remove('ad-on'); });
+  } else {
+    Plug.AdMob.hideBanner().catch(() => {});
+  }
+}
+
+// Watches the end of the open article (and its quiz) to decide when the banner may appear.
+function watchArticleForAds() {
+  if (!NATIVE) return;
+  ad.observer?.disconnect();
+  ad.endSeen = false;
+  ad.quizSeen = false;
+  updateBanner();
+  if (!ad.ready || !('IntersectionObserver' in window)) return;
+  ad.observer = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.target.classList.contains('reader-end')) ad.endSeen = e.isIntersecting;
+      if (e.target.classList.contains('quiz')) ad.quizSeen = e.isIntersecting;
+    }
+    updateBanner();
+  });
+  els.reader.querySelectorAll('.reader-end, .quiz').forEach((el) => ad.observer.observe(el));
+}
+
+async function watchForAdFree() {
+  if (!ad.ready) { toast(t('ads.none')); return; }
+  els.adFreeBtn.disabled = true;
+  try {
+    await Plug.AdMob.prepareRewardVideoAd({ adId: ADS.rewarded, isTesting: ADS.testing });
+    await Plug.AdMob.showRewardVideoAd();
+  } catch {
+    toast(t('ads.none'));
+  }
+  els.adFreeBtn.disabled = false;
+}
+
+function grantAdFree() {
+  prefs.set('adFreeUntil', Date.now() + ADS.adFreeHours * 3600000);
+  updateBanner();
+  renderAdUi();
+  celebrate();
+  toast(t('ads.thanks'));
+}
+
+function renderAdUi() {
+  if (!NATIVE) return;
+  const until = adFreeUntil();
+  if (Date.now() < until) {
+    const time = new Intl.DateTimeFormat(LANG, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(until));
+    els.adFreeBtn.textContent = t('ads.freeOn', { time });
+    els.adFreeBtn.disabled = true;
+  } else {
+    els.adFreeBtn.textContent = t('ads.free');
+    els.adFreeBtn.disabled = !ad.ready;
+  }
+  els.adPrivacyBtn.hidden = !ad.privacy;
+}
+
 /* ---------- Related articles ---------- */
 
 function relatedArticles(a, excludeId, limit = 3) {
@@ -1849,7 +2043,9 @@ function relabelAll() {
     applyHighlights();
     updateReadUI();
     scrollToFraction(keep);
+    watchArticleForAds();
   }
+  renderAdUi();
   if (els.progressDlg.open) renderProgress();
   if (tts.supported) populateVoices();
 }
@@ -1923,15 +2119,8 @@ async function shareProgress() {
   const blob = await makeProgressCard();
   if (!blob) { toast(t('quote.fail')); return; }
   const s = computeStats();
-  const file = new File([blob], 'digest-progress.png', { type: 'image/png' });
   const text = `${t('share.progress', { streak: s.streak, level: s.level })} ${appUrl()}`;
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], text }); bumpEvent('shares'); } catch (err) { if (err.name !== 'AbortError') downloadBlob(blob, file.name); }
-  } else {
-    downloadBlob(blob, file.name);
-    bumpEvent('shares');
-    toast(t('quote.saved'));
-  }
+  await shareImage(blob, 'digest-progress.png', text, 'Digest');
 }
 
 /* ---------- Today's pick ---------- */
@@ -1988,6 +2177,7 @@ function maybeWelcome() {
 /* ---------- Routing (#/a/<id> opens the reader) ---------- */
 
 function leaveArticle() {
+  if (NATIVE) { ad.observer?.disconnect(); ad.endSeen = false; ad.quizSeen = false; }
   if (!state.currentId) return;
   persistProgress(true);
   ttsStop();
@@ -2013,6 +2203,7 @@ function openArticle(id) {
   hideSelBar();
   applyHighlights();
   updateReadUI();
+  watchArticleForAds();
   requestWakeLock();
 
   if (resumeAt > 0 && resumeAt < READ_AT) {
@@ -2085,11 +2276,8 @@ async function shareArticle(a) {
   const data = a.url
     ? { title: a.title, text: `${a.title}\n\n${flatten(a.body).slice(0, 280)}…`, url: a.url }
     : { title: a.title, text: plainText(a).slice(0, 20000) };
-  if (navigator.share) {
-    try { await navigator.share(data); } catch (err) { if (err.name !== 'AbortError') copyText(plainText(a)); }
-  } else {
-    copyText(plainText(a), t('shareNA'));
-  }
+  const r = await shareOut(data);
+  if (r === 'failed' || r === 'unsupported') copyText(plainText(a), t('shareNA'));
 }
 
 async function deleteArticle(a) {
@@ -2220,9 +2408,9 @@ function restoreExtras(b) {
 }
 
 // articles.json can be a plain array, or { "articles": [...], "removed": ["id", ...] }.
-async function fetchSeedFull(options) {
+async function fetchSeedFull(options, url = SEED_URL) {
   try {
-    const res = await fetch(SEED_URL, options);
+    const res = await fetch(url, options);
     if (!res.ok) return { items: [], removed: [] };
     const text = await res.text();
     const { items } = parsePayload(text);
@@ -2236,7 +2424,7 @@ async function fetchSeed(options) { return (await fetchSeedFull(options)).items;
 // Adds new articles from the bundled articles.json and refreshes bundled ones whose text changed.
 // Articles the user imported themselves, or deleted, are left alone.
 async function mergeNewSeedArticles() {
-  const { items: seed, removed } = await fetchSeedFull({ cache: 'no-store' });
+  const { items: seed, removed } = await fetchSeedFull({ cache: 'no-store' }, NATIVE ? REMOTE_SEED_URL : SEED_URL);
   // Retire bundled articles the publisher removed (never the user's own imports).
   const retire = removed.filter((id) => state.byId.has(id) && !state.byId.get(id).userImported);
   for (const id of retire) await store.remove(id);
@@ -2283,13 +2471,16 @@ function exportBackup() {
     quiz: quizAll(),
   };
   const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `digest-backup-${localDay()}.json`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  const name = `digest-backup-${localDay()}.json`;
+  if (NATIVE) {
+    // Android: hand the file to the share sheet so it can go to Drive, Files, email...
+    shareOut({ title: name, blob, name }).then((r) => {
+      if (r === 'failed') setStatus(t('err.failed'), 'error');
+      else if (r === 'shared') setStatus(t('export.done', { n: state.articles.length }), 'ok');
+    });
+    return;
+  }
+  downloadBlob(blob, name);
   setStatus(t('export.done', { n: state.articles.length }), 'ok');
 }
 
@@ -2550,7 +2741,7 @@ function bindEvents() {
   els.ttsClose.addEventListener('click', ttsStop);
   if (tts.supported) {
     populateVoices();
-    speechSynthesis.addEventListener?.('voiceschanged', populateVoices);
+    if (!nativeTts) speechSynthesis.addEventListener?.('voiceschanged', populateVoices);
   } else {
     els.listen.hidden = true;
     els.ttsSettings.hidden = true;
@@ -2610,9 +2801,39 @@ function bindEvents() {
     setStatus('');
     els.dialog.showModal();
   });
-  document.querySelectorAll('dialog.sheet').forEach((d) => d.addEventListener('click', (e) => {
-    if (e.target === d || e.target.closest('[data-close]')) d.close();
-  }));
+  document.querySelectorAll('dialog.sheet').forEach((d) => {
+    d.addEventListener('click', (e) => {
+      if (e.target === d || e.target.closest('[data-close]')) d.close();
+    });
+    d.addEventListener('close', () => updateBanner());
+    new MutationObserver(() => updateBanner()).observe(d, { attributes: true, attributeFilter: ['open'] });
+  });
+
+  if (NATIVE) {
+    // Android back button: close what's on top first, then go back, then leave the app.
+    Plug.App?.addListener('backButton', () => {
+      const open = document.querySelector('dialog[open]');
+      if (open) { open.close(); return; }
+      if (!els.selBar.hidden) { hideSelBar(); return; }
+      if (tts.on) { ttsStop(); return; }
+      if (!els.readerView.hidden) { goBack(); return; }
+      if (state.query) { els.clearSearch.click(); return; }
+      Plug.App.minimizeApp();
+    });
+    // Web links open in the phone's browser, not inside the app.
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="http"]');
+      if (!a) return;
+      e.preventDefault();
+      window.location.href = a.href; // Capacitor hands external URLs to the system browser
+    });
+    els.privacyLink.href = WEB_URL + 'privacy.html';
+    els.adFreeBtn.addEventListener('click', watchForAdFree);
+    els.adPrivacyBtn.addEventListener('click', () => Plug.AdMob.showPrivacyOptionsForm().catch(() => {}));
+    window.addEventListener('online', updateBanner);
+    window.addEventListener('offline', updateBanner);
+    Plug.App?.addListener('resume', () => { renderAdUi(); updateBanner(); });
+  }
 
   els.noteSave.addEventListener('click', saveNote);
 
@@ -2654,7 +2875,7 @@ function bindEvents() {
 }
 
 function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
+  if (NATIVE || !('serviceWorker' in navigator)) return; // the Android app ships its files inside the app
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Service worker failed:', err));
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -2727,6 +2948,7 @@ async function init() {
   if (!shared && els.readerView.hidden) maybeWelcome();
 
   registerServiceWorker();
+  initAds();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if (!firstRun && navigator.onLine) mergeNewSeedArticles().catch(() => {});
   if (!store.ok) toast(t('storage.na'));

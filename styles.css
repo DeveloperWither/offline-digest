@@ -1220,6 +1220,11 @@ input[type="range"] { width: 100%; margin: 0 0 12px; accent-color: var(--accent)
 
 .about a { color: var(--accent); }
 
+/* Android app: leave room for the small banner at the end of articles */
+.ad-on .reader { padding-bottom: calc(var(--ad-h, 60px) + var(--sab) + 40px); }
+.ad-on .toast { bottom: calc(var(--ad-h, 60px) + 18px + var(--sab)); }
+#ads-sec .btn { width: 100%; }
+
 /* ---------- Motion ----------
  * Everything here is switched off by the prefers-reduced-motion rule at the end of the file. */
 
