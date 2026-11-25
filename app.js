@@ -616,6 +616,34 @@ function applySort(list) {
   }
 }
 
+// A topic picture for each card, picked from the article's tags and title (no downloads needed).
+const THUMBS = [
+  [/\b(guinness)\b/i, '🏆'], [/\b(sleep)\b/i, '😴'],
+  [/\b(gta|game|games|gaming|playstation|xbox|nintendo|capcom)\b/i, '🎮'], [/\b(phones?|iphone|xiaomi|smartphones?|foldable)\b/i, '📱'],
+  [/\b(rockets?|satellites?|vulcan|spacex|starship)\b/i, '🚀'], [/\b(mars|moon|nasa|space|spacecraft|artemis|planets?|asteroids?|telescope)\b/i, '🪐'],
+  [/\b(f1|grand prix|formula 1|verstappen|drift)\b/i, '🏎️'], [/\b(tennis|alcaraz|atp)\b/i, '🎾'], [/\b(football|world cup|fifa|u-17|soccer)\b/i, '⚽'],
+  [/\b(guinness|world records?)\b/i, '🏆'], [/\b(flights?|airbus|airlines?|airliner|planes?|boeing)\b/i, '✈️'], [/\b(fossils?|dinosaurs?|taung)\b/i, '🦴'],
+  [/\b(deep-sea|ocean|marine|animals?)\b/i, '🐙'], [/\b(climate|cop31|temperature|el niño|weather)\b/i, '🌍'],
+  [/\b(art|arts|festival|museum|biennial)\b/i, '🎨'], [/\b(tourism|tourists?|visitors?|hotels?|travel)\b/i, '🧳'],
+  [/\b(ebola|vaccines?|health|blood|first aid|antibiotics?|stress|diabetes|eyes|fasting)\b/i, '🩺'], [/\b(sleep)\b/i, '😴'],
+  [/\b(ipo|stocks?|shares|nasdaq|earnings|profit)\b/i, '📈'], [/\b(chips?|tsmc|intel|nvidia|semiconductors?)\b/i, '💾'],
+  [/\b(hackers?|cyber|cyberattack|ransomware|breach|passwords?|scams?|phishing)\b/i, '🔐'],
+  [/\b(electric cars?|tesla|robotaxi|byd|ev|cars?)\b/i, '🚗'], [/\b(oil|opec|energy|solar)\b/i, '⚡'],
+  [/\b(economy|gdp|budget|bank|inflation|imf|wages|emergency fund|compound)\b/i, '💰'],
+  [/\b(ai|gemini|claude|anthropic|openai|kimi|transformer|rag|deepfakes?)\b/i, '🤖'],
+  [/\b(earthquakes?)\b/i, '🌋'], [/\b(water|desalination|seawater)\b/i, '💧'], [/\b(cables?|internet|gps)\b/i, '🛰️'],
+  [/\b(jobs?|cv|interview|study)\b/i, '💼'], [/\b(black holes?)\b/i, '🌌'],
+  [/\b(elections?|parliament|president|government|summit|court|vote|voters)\b/i, '🏛️'],
+  [/\b(history|empire|wall|silk road|andalus|wisdom|constantinople|apollo)\b/i, '📜'],
+];
+const CAT_THUMB = { world: '🌍', ai: '🤖', history: '📜', tech: '💡', learn: '📚' };
+function thumbFor(a) {
+  if (a.emoji) return esc(a.emoji);
+  const text = `${a.tags.join(' ')} ${a.title}`;
+  for (const [re, e] of THUMBS) if (re.test(text)) return e;
+  return CAT_THUMB[CATEGORY_KEYS[a.category]] || '📰';
+}
+
 const progressBar = (p) => `<div class="card-progress" aria-hidden="true"><span style="width:${Math.round(p * 100)}%"></span></div>`;
 
 function renderContinue(show) {
@@ -671,6 +699,7 @@ function renderList() {
         ${a.quiz?.length && !a.quiz.every((_, i) => Number.isInteger(quizAnswers(a.id)[i])) ? `<span class="quiz-mark">${esc(t('quiz.tag'))}</span>` : ''}
         ${u.r ? `<span class="read-mark">${t('readMark')}</span>` : ''}
         ${u.s ? `<span class="saved-mark" aria-label="${esc(t('filter.saved'))}">★</span>` : ''}</div>
+      <span class="card-thumb" data-cat="${CATEGORY_KEYS[a.category]}" aria-hidden="true">${thumbFor(a)}</span>
       <h2 class="card-title" dir="auto">${highlight(a.title, re)}</h2>
       ${hlAll ? `<blockquote class="card-quote" dir="auto">“${esc(hlAll[a.id][hlAll[a.id].length - 1].t)}”${hlAll[a.id].length > 1 ? `<small>${t('more', { n: hlAll[a.id].length - 1 })}</small>` : ''}</blockquote>`
         : `<p class="card-excerpt" dir="auto">${snippet(a.body, re)}</p>`}
@@ -1855,19 +1884,23 @@ function answerQuiz(qi, oi) {
 }
 
 /* ---------- Ads (Android app only) ----------
- * Light by design: one small banner, only when the reader reaches the end of an article.
- * Never pop-ups, never during quizzes or read-aloud, never offline, never in the first days,
- * and a short video turns ads off for 24 hours. The website has no ads. */
+ * Light by design: one small banner when the reader reaches the end of an article, plus a short
+ * skippable full-screen ad now and then when opening an article (every few articles, never twice
+ * within a few minutes). Never during quizzes or read-aloud, never offline, never in the first
+ * days, and a short video turns all ads off for 24 hours. The website has no ads. */
 
 const ADS = {
   // TEST IDs from Google. Replace with your own AdMob ad unit IDs before publishing.
   banner: 'ca-app-pub-3940256099942544/9214589741',
   rewarded: 'ca-app-pub-3940256099942544/5224354917',
+  interstitial: 'ca-app-pub-3940256099942544/1033173712',
   testing: true,
+  interstitialEvery: 4,      // at most one short full-screen ad per 4 articles opened
+  interstitialGapMin: 4,     // and never two within 4 minutes
   graceDays: 3,
   adFreeHours: 24,
 };
-const ad = { ready: false, created: false, visible: false, privacy: false, endSeen: false, quizSeen: false, observer: null };
+const ad = { interLoaded: false, interLoading: false, opens: 0, ready: false, created: false, visible: false, privacy: false, endSeen: false, quizSeen: false, observer: null };
 
 async function initAds() {
   if (!NATIVE || !Plug.AdMob) return;
@@ -1884,6 +1917,7 @@ async function initAds() {
       document.documentElement.style.setProperty('--ad-h', `${Math.max(0, size?.height || 0)}px`);
     });
     Plug.AdMob.addListener('onRewardedVideoAdReward', grantAdFree);
+    preloadInterstitial();
   } catch (err) {
     console.warn('Ads unavailable:', err);
   }
@@ -1932,6 +1966,29 @@ function watchArticleForAds() {
     updateBanner();
   });
   els.reader.querySelectorAll('.reader-end, .quiz').forEach((el) => ad.observer.observe(el));
+}
+
+async function preloadInterstitial() {
+  if (!ad.ready || ad.interLoaded || ad.interLoading || !ADS.interstitial) return;
+  ad.interLoading = true;
+  try {
+    await Plug.AdMob.prepareInterstitial({ adId: ADS.interstitial, isTesting: ADS.testing });
+    ad.interLoaded = true;
+  } catch { /* no fill: try again on a later article */ }
+  ad.interLoading = false;
+}
+
+// Called when an article is opened: maybe show one short, skippable full-screen ad.
+function maybeShowInterstitial() {
+  if (!NATIVE || !ad.ready) return;
+  ad.opens += 1;
+  const last = Number(prefs.get('lastInter', 0)) || 0;
+  const due = ad.opens % ADS.interstitialEvery === 0 && Date.now() - last > ADS.interstitialGapMin * 60000;
+  if (!due || !adsAllowed() || tts.on) { preloadInterstitial(); return; }
+  if (!ad.interLoaded) { preloadInterstitial(); return; }
+  ad.interLoaded = false;
+  prefs.set('lastInter', Date.now());
+  Plug.AdMob.showInterstitial().catch(() => {}).finally(() => setTimeout(preloadInterstitial, 5000));
 }
 
 async function watchForAdFree() {
@@ -2204,6 +2261,7 @@ function openArticle(id) {
   applyHighlights();
   updateReadUI();
   watchArticleForAds();
+  maybeShowInterstitial();
   requestWakeLock();
 
   if (resumeAt > 0 && resumeAt < READ_AT) {

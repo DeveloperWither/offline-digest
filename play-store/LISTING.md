@@ -14,7 +14,7 @@ Copy and paste these into Play Console. Images are in this folder.
 
 ## Short description (max 80)
 ```
-Free world news, AI, tech & learning guides you can read offline. No ads.
+Free world news, AI, tech & learning guides you can read offline. No account.
 ```
 
 ## Full description (max 4000)
@@ -50,7 +50,7 @@ Listen to any article with your phone's voices, at your own speed.
 • 6 languages: English, العربية, Español, Français, Português, हिन्दी
 
 🔒 RESPECTFUL BY DESIGN
-No account. Your reading, notes and progress stay on your device. Ads are light: one small ad at the end of an article, never pop-ups, and you can watch a short video to turn them off for 24 hours.
+No account. Your reading, notes and progress stay on your device. Ads are light: a small ad at the end of an article, a short skippable ad now and then, and you can watch a short video to turn them off for 24 hours.
 ```
 
 ## Graphics (in this folder)

@@ -1394,3 +1394,27 @@ html.theme-fade, html.theme-fade * {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Topic picture on each card */
+.card-thumb {
+  float: inline-end;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: 10px 0 6px 12px;
+  margin-inline: 12px 0;
+  border-radius: 16px;
+  font-size: 34px;
+  line-height: 1;
+  --cat: var(--text-3);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cat) 30%, transparent), color-mix(in srgb, var(--cat) 8%, transparent));
+  border: 1px solid color-mix(in srgb, var(--cat) 25%, transparent);
+}
+.card-thumb[data-cat="ai"] { --cat: var(--cat-ai); }
+.card-thumb[data-cat="history"] { --cat: var(--cat-history); }
+.card-thumb[data-cat="tech"] { --cat: var(--cat-tech); }
+.card-thumb[data-cat="world"] { --cat: var(--cat-world); }
+.card-thumb[data-cat="learn"] { --cat: var(--cat-learn); }
+.card-foot { clear: both; }
+.next-card .card-thumb { display: none; }
