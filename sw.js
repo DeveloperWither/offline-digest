@@ -1,6 +1,6 @@
 /* Offline Digest service worker.
  * Bump VERSION whenever you change any cached file so clients pick up the update. */
-const VERSION = 'v2.1.1';
+const VERSION = 'v2.1.2';
 const CACHE = `offline-digest-${VERSION}`;
 
 // Paths are relative to this file, so the app works from any GitHub Pages sub-path.

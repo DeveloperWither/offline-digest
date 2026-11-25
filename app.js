@@ -1897,7 +1897,7 @@ const ADS = {
   testing: false,
   interstitialEvery: 4,      // at most one short full-screen ad per 4 articles opened
   interstitialGapMin: 4,     // and never two within 4 minutes
-  graceDays: 3,
+  graceHours: 1,             // no ads in the first hour after install
   adFreeHours: 24,
 };
 const ad = { interLoaded: false, interLoading: false, opens: 0, ready: false, created: false, visible: false, privacy: false, endSeen: false, quizSeen: false, observer: null };
@@ -1928,7 +1928,7 @@ const adFreeUntil = () => Number(prefs.get('adFreeUntil', 0)) || 0;
 
 function adsAllowed() {
   return ad.ready && navigator.onLine
-    && Date.now() - Number(prefs.get('firstSeen', Date.now())) > ADS.graceDays * 86400000
+    && Date.now() - Number(prefs.get('firstSeen', Date.now())) > ADS.graceHours * 3600000
     && Date.now() > adFreeUntil();
 }
 
