@@ -1890,11 +1890,11 @@ function answerQuiz(qi, oi) {
  * days, and a short video turns all ads off for 24 hours. The website has no ads. */
 
 const ADS = {
-  // TEST IDs from Google. Replace with your own AdMob ad unit IDs before publishing.
-  banner: 'ca-app-pub-3940256099942544/9214589741',
-  rewarded: 'ca-app-pub-3940256099942544/5224354917',
-  interstitial: 'ca-app-pub-3940256099942544/1033173712',
-  testing: true,
+  // Real AdMob IDs (account ca-app-pub-5694068260682334).
+  banner: 'ca-app-pub-5694068260682334/1468821183',
+  rewarded: 'ca-app-pub-5694068260682334/3791411393',
+  interstitial: 'ca-app-pub-5694068260682334/1524661509',
+  testing: false,
   interstitialEvery: 4,      // at most one short full-screen ad per 4 articles opened
   interstitialGapMin: 4,     // and never two within 4 minutes
   graceDays: 3,
